@@ -8,11 +8,11 @@ Appwrite Function Sample to showcase CRUD functions for an Azure CosmosDB NoSQL 
 
 ```json
 {
-	"function": string,
+	"function": "string",
 	"product": {
-		"id": string,
-		"productCategory": string,
-		"productName": string
+		"id": "string",
+		"productCategory": "string",
+		"productName": "string"
 	}
 }
 ```
