@@ -11,6 +11,18 @@ public async Task<RuntimeResponse> Main(RuntimeRequest req, RuntimeResponse res)
   var cosmosDBEndpoint = req.Variables["COSMOSDB_ENDPOINT"];
   var cosmosDBKey = req.Variables["COSMOSDB_KEY"];
 
+  if(String.IsNullOrEmpty(cosmosDBEndpoint) || String.IsNullOrEmpty(cosmosDBKey))
+  {
+    return res.Json(
+      data: new()
+      {
+        { "response", "Cosmos DB credentials are missing" },
+        { "data", null }
+      }, 
+      statusCode: 400
+    );
+  }
+
   // Database Details
 
   var databaseId = "ProductsDB";
@@ -23,85 +35,138 @@ public async Task<RuntimeResponse> Main(RuntimeRequest req, RuntimeResponse res)
   );
 
   // Check If Database and Container Exist
-
-  DatabaseResponse databaseResponse = await client.CreateDatabaseIfNotExistsAsync(databaseId);
-  Database database = databaseResponse.Database;
-  ContainerResponse containerResponse = await database.CreateContainerIfNotExistsAsync(
-    id: containerId,
-    partitionKeyPath: partitionKeyPath,
-    throughput: 400
-  );
-  Container container = containerResponse.Container;
+  
+  Container container;
+  
+  try
+  {
+    DatabaseResponse databaseResponse = await client.CreateDatabaseIfNotExistsAsync(databaseId);
+    Database database = databaseResponse.Database;
+    ContainerResponse containerResponse = await database.CreateContainerIfNotExistsAsync(
+      id: containerId,
+      partitionKeyPath: partitionKeyPath,
+      throughput: 400
+    );
+    container = containerResponse.Container;
+  }
+  catch(Exception ex)
+  {
+    Console.WriteLine(ex.StackTrace);
+    return res.Json(
+      data: new()
+      {
+        { "response", ex.Message },
+        { "data", "Check logs for stack trace" }
+      }, 
+      statusCode: 400
+    );
+  }
 
   // Deserialize Payload
-
-  var functionRequest = JsonConvert.DeserializeObject<FunctionRequest>(req.Payload);
+  FunctionRequest functionRequest;
+  try
+  {
+    functionRequest = JsonConvert.DeserializeObject<FunctionRequest>(req.Payload);
+  }
+  catch(Exception ex)
+  {
+    Console.WriteLine(ex.StackTrace);
+    return res.Json(
+      data: new()
+      {
+        { "response", ex.Message },
+        { "data", "Check logs for stack trace" }
+      }, 
+      statusCode: 400
+    );
+  }
   var function = functionRequest.Function;
   var product = functionRequest.Product;
 
   // Cosmos DB Functions
 
-  if(function.Equals("create"))
+  try
   {
-    if(String.IsNullOrEmpty(product.Id))
+    if(function.Equals("create"))
     {
-      product.Id = Guid.NewGuid().ToString();
+      if(String.IsNullOrEmpty(product.Id))
+      {
+        product.Id = Guid.NewGuid().ToString();
+      }
+      var createdProduct = await CreateProduct(container, product);
+      return res.Json(new()
+      {
+        { "response", "Created Product" },
+        { "data", createdProduct }
+      });
     }
-    var createdProduct = await CreateProduct(container, product);
-    return res.Json(new()
-    {
-      { "response", "Created Product" },
-      { "data", createdProduct }
-    });
-  }
 
-  if(function.Equals("read"))
-  {
-    var readProduct = await ReadProduct(container, product);
-    return res.Json(new()
+    else if(function.Equals("read"))
     {
-      { "response", "Read Product" },
-      { "data", readProduct }
-    });
-  }
-  
-  if(function.Equals("readall"))
-  {
-    var readProducts = await ReadAllProducts(container);
-    return res.Json(new()
+      var readProduct = await ReadProduct(container, product);
+      return res.Json(new()
+      {
+        { "response", "Read Product" },
+        { "data", readProduct }
+      });
+    }
+    
+    else if(function.Equals("readall"))
     {
-      { "response", "Read All Products" },
-      { "data", readProducts }
-    });
-  }
+      var readProducts = await ReadAllProducts(container);
+      return res.Json(new()
+      {
+        { "response", "Read All Products" },
+        { "data", readProducts }
+      });
+    }
 
-  if(function.Equals("update"))
-  {
-    var updatedProduct = await UpdateProduct(container, product);
-    return res.Json(new()
+    else if(function.Equals("update"))
     {
-      { "response", "Updated Product" },
-      { "data", updatedProduct }
-    });
-  }
-  
-  if(function.Equals("delete"))
-  {
-    var deletedProduct = await DeleteProduct(container, product);
-    return res.Json(new()
+      var updatedProduct = await UpdateProduct(container, product);
+      return res.Json(new()
+      {
+        { "response", "Updated Product" },
+        { "data", updatedProduct }
+      });
+    }
+    
+    else if(function.Equals("delete"))
     {
-      { "response", "Deleted Product" },
-      { "data", deletedProduct }
-    });
+      var deletedProduct = await DeleteProduct(container, product);
+      return res.Json(new()
+      {
+        { "response", "Deleted Product" },
+        { "data", deletedProduct }
+      });
+    }
+
+    // Closing return statement
+
+    else
+    {
+      return res.Json(
+        data: new()
+        {
+          { "response", "Function value is invalid" },
+          { "data", null }
+        }, 
+        statusCode: 400
+      );
+    }
   }
-
-  // Closing return statement
-
-  return res.Json(new()
+  catch(Exception ex)
   {
-    { "response", "Something went wrong" },
-    { "data", null }
-  });
+    Console.WriteLine(ex.StackTrace);
+    return res.Json(
+      data: new()
+      {
+        { "response", ex.Message },
+        { "data", "Check logs for stack trace" }
+      }, 
+      statusCode: 500
+    );
+  }
 }
 
 public async Task<Product> CreateProduct(Container container, Product product)
